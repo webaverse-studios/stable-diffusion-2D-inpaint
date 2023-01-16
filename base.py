@@ -8,6 +8,8 @@ from pathlib import Path
 import oneflow as torch
 from diffusers import (
     OneFlowDPMSolverMultistepScheduler as DPMSolverMultistepScheduler,
+    OneFlowStableDiffusionPipeline as StableDiffusionPipeline,
+    OneFlowStableDiffusionImg2ImgPipeline as StableDiffusionImg2ImgPipeline,
     OneFlowStableDiffusionInpaintPipeline as StableDiffusionInpaintPipeline,
 )
 
@@ -15,7 +17,7 @@ from diffusers import (
 #device = "cuda" means that the model should go in the available GPU, we can
 #also make it go to a specific GPU if multiple GPUs are available.
 #Example: device = "cuda:2" would cause the model to load into GPU #3
-def init_model(local_model_path = "./stable-diffusion-2-depth", device = "cuda"):
+def init_model(local_model_path = "./stable-diffusion-2-inpainting", mode = 'txt2img', device = "cuda"):
 
   #If the model is Depth assisted Img2Img model
   if 'inpainting' in local_model_path:
@@ -31,7 +33,28 @@ def init_model(local_model_path = "./stable-diffusion-2-depth", device = "cuda")
     pipe = pipe.to(device)
     return pipe
   else:
-    raise Exception('Only OneFlow inpainting pipeline supported currently!')
+    if mode is 'txt2img':
+      pipe = StableDiffusionPipeline.from_pretrained(
+          local_model_path,
+          # use_auth_token=True,
+          # revision="fp16",
+          torch_dtype=torch.float16,
+          scheduler=dpm_solver,
+          num_inference_steps=20,
+      )
+      return pipe
+    elif mode is 'img2img':
+      pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
+          local_model_path,
+          # use_auth_token=True,
+          # revision="fp16",
+          torch_dtype=torch.float16,
+          scheduler=dpm_solver,
+          num_inference_steps=20,
+      )
+      return pipe
+    else:
+      raise Exception('Unknown `mode` argument')
 
 
 #'image_path' is a local path to the image
@@ -67,8 +90,8 @@ def load_image_generalised(image_path):
 
 
 def inference(pipe, \
-              init_img,\
-              mask_image, \
+              init_img = None,\
+              mask_image = None, \
               prompts = ["blue house", "blacksmith workshop"], \
               # strength: float = 0.90,\
               num_inference_steps: int = 20,\
@@ -78,17 +101,29 @@ def inference(pipe, \
               device = "cuda",
               seed = 1024):
   
+  generator = torch.Generator(device=device).manual_seed(seed)
+  negative_pmpt = [negative_pmpt for negative_pmpt in range(len(prompts))]
+
   if req_type == 'inpaint':
-    negative_pmpt = [negative_pmpt for negative_pmpt in range(len(prompts))]
-
-    generator = torch.Generator(device=device).manual_seed(seed)
-
-    images = pipe(prompt=prompts, image=init_img, mask_image=mask_image, num_inference_steps = num_inference_steps,\
+    if mask_image is None or init_img is None:
+      raise Exception('Invalid: `predict`: Mask Image or Init image not provided for Inpainting')
+  
+    with torch.autocast("cuda"):
+      images = pipe(prompt=prompts, image=init_img, mask_image=mask_image, num_inference_steps = num_inference_steps,\
                     guidance_scale = guidance_scale, negative_prompt = negative_pmpt, generator = generator)
 
     images = images[0]
-  else:
-    raise Exception('inference: Only inpainting supported!!')
+  elif req_type == 'txt2img':
+    images = pipe(prompt=prompts,  num_inference_steps = num_inference_steps,\
+                    guidance_scale = guidance_scale, negative_prompt = negative_pmpt, generator = generator)
+    images = images[0]
+
+  elif req_type == 'img2img':
+    if init_img is None:
+      raise Exception('Invalid: `predict`: Init image not provided for Img2img')
+    images = pipe(prompt=prompts, image = init_img, num_inference_steps = num_inference_steps,\
+                    guidance_scale = guidance_scale, negative_prompt = negative_pmpt, generator = generator)
+    images = images[0]
       
   #Returns a List of PIL Images
   return images

@@ -19,6 +19,8 @@ print('cuda status is',torch.cuda.is_available())
 #strdwvlly style model for generating assets with black background
 # pipe_asset = init_model(local_model_path = "./diffusers_summerstay_strdwvlly_asset_v2")
 pipe_inpaint = init_model(local_model_path = "./stable-diffusion-2-inpainting")
+pipe_txt2img = init_model(local_model_path = "./stable-diffusion-2-1-base", mode = 'txt2img')
+pipe_img2img = init_model(local_model_path = "./stable-diffusion-2-1-base", mode = 'img2img')
 
 
 
@@ -43,13 +45,13 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-        input: Path = Input(description="Init Image for Inpaint"),
-        mask: Path = Input(description="Mask Image for Inpaint"),
+        input: Path = Input(description="Init Image for Inpaint", default = None),
+        mask: Path = Input(description="Mask Image for Inpaint", default = None),
         prompts: str = Input(description="Prompts", default="blue house: fire cathedral   "),
         # strength: float = Input(description="Denoising strength of Stable Diffusion", default=0.85),
         guidance_scale: float = Input(description="Prompt Guidance strength/Classifier Free Generation strength of Stable Diffusion", default=7.5),
         split : str = Input(description="Decide which split needs to happen", default="none"),
-        req_type: str = Input(description="Describes whether the request is for an object, currently only \'inpaint\'", default="inpaint"),
+        req_type: str = Input(description="Describes whether the request is for an object, currently only \'inpaint\', \'txt2img\' and \'img2img\' are supported ", default="inpaint"),
         negative_prompt: str = Input(description="Negative_Prompt", default="ugly, blurry"),
         num_inference_steps: int = Input(description="Number of denoising steps", default = 20),
         cut_inner_tol:int = Input(description="Inner tolerance in `cutv2` strongest component PNG masking ", default = 7),
@@ -59,13 +61,14 @@ class Predictor(BasePredictor):
     ) -> Any:
         """Run a single prediction on the model"""
         try:
-            global pipe_inpaint
-
-            init_img = load_image_generalised(input)
-            mask_image = load_image_generalised(mask)
+            global pipe_inpaint, pipe_txt2img, pipe_img2img
 
             images = None
             if req_type == 'inpaint':
+                if input is None or mask is None:
+                    raise Exception('Invalid: `predict`: Mask Image or Init image not provided for Inpainting')
+                init_img = load_image_generalised(input)
+                mask_image = load_image_generalised(mask)
                 images = inference(pipe_inpaint, init_img, mask_image, \
                             prompts = separate_prompts(prompts), \
                             negative_pmpt = negative_prompt,
@@ -74,9 +77,28 @@ class Predictor(BasePredictor):
                             num_inference_steps = num_inference_steps,
                             seed = sd_seed)
             
-            #else assume it to be a request for tiles
+            elif req_type == 'txt2img':
+                images = inference(pipe_txt2img, None, None, \
+                            prompts = separate_prompts(prompts), \
+                            negative_pmpt = negative_prompt,
+                            guidance_scale = guidance_scale,
+                            req_type = req_type,
+                            num_inference_steps = num_inference_steps,
+                            seed = sd_seed)
+            elif req_type == 'img2img': 
+                if input is None:
+                    raise Exception('Invalid: Init image not provided for img2img')
+                init_img = load_image_generalised(input)
+                images = inference(pipe_img2img, init_img, None, \
+                            prompts = separate_prompts(prompts), \
+                            negative_pmpt = negative_prompt,
+                            guidance_scale = guidance_scale,
+                            req_type = req_type,
+                            num_inference_steps = num_inference_steps,
+                            seed = sd_seed)
             else:
-                raise('predict: only Inpaint supported!')
+                print('Unknown `req_type`, assuming it to be `txt2img`')
+                
 
 
             external_ip = urllib.request.urlopen('https://ident.me').read().decode('utf8')
