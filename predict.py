@@ -57,17 +57,24 @@ class Predictor(BasePredictor):
         cut_inner_tol:int = Input(description="Inner tolerance in `cutv2` strongest component PNG masking ", default = 7),
         cut_outer_tol:int = Input(description="Outer tolerance in `cutv2` strongest component PNG masking ", default = 35),
         cut_radius:int = Input(description="Radius in `cutv2` strongest component PNG masking ", default = 70),
-        sd_seed:int = Input(description="Seed for SD generations for getting deterministic outputs", default = 1024)
+        sd_seed:int = Input(description="Seed for SD generations for getting deterministic outputs", default = 1024),
+        width:int = Input(description="Width for returning output image", default = None),
+        height:int = Input(description="Height for returning output image", default = None)
     ) -> Any:
         """Run a single prediction on the model"""
         try:
             global pipe_inpaint, pipe_txt2img, pipe_img2img
+
+            print(prompts)
+
+            orig_img_dims = None
 
             images = None
             if req_type == 'inpaint':
                 if input is None or mask is None:
                     raise Exception('Invalid: `predict`: Mask Image or Init image not provided for Inpainting')
                 init_img = load_image_generalised(input)
+                orig_img_dims = init_img.shape
                 mask_image = load_image_generalised(mask)
                 images = inference(pipe_inpaint, init_img, mask_image, \
                             prompts = separate_prompts(prompts), \
@@ -89,6 +96,7 @@ class Predictor(BasePredictor):
                 if input is None:
                     raise Exception('Invalid: Init image not provided for img2img')
                 init_img = load_image_generalised(input)
+                orig_img_dims = init_img.shape
                 images = inference(pipe_img2img, init_img, None, \
                             prompts = separate_prompts(prompts), \
                             negative_pmpt = negative_prompt,
@@ -102,6 +110,18 @@ class Predictor(BasePredictor):
 
 
             external_ip = urllib.request.urlopen('https://ident.me').read().decode('utf8')
+
+
+            if height is None or width is None:
+                if orig_img_dims is None:
+                    height = 512
+                    width = 512
+                else:
+                    height = orig_img_dims[0]
+                    width = orig_img_dims[1]
+
+            for idx in len(images):
+                images[idx] = images[idx].resize((height,width))
 
             images_ = []
 
