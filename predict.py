@@ -74,7 +74,7 @@ class Predictor(BasePredictor):
                 if input is None or mask is None:
                     raise Exception('Invalid: `predict`: Mask Image or Init image not provided for Inpainting')
                 init_img = load_image_generalised(input)
-                orig_img_dims = init_img.shape
+                orig_img_dims = init_img.size
                 mask_image = load_image_generalised(mask)
                 images = inference(pipe_inpaint, init_img, mask_image, \
                             prompts = separate_prompts(prompts), \
@@ -96,7 +96,7 @@ class Predictor(BasePredictor):
                 if input is None:
                     raise Exception('Invalid: Init image not provided for img2img')
                 init_img = load_image_generalised(input)
-                orig_img_dims = init_img.shape
+                orig_img_dims = init_img.size
                 images = inference(pipe_img2img, init_img, None, \
                             prompts = separate_prompts(prompts), \
                             negative_pmpt = negative_prompt,
